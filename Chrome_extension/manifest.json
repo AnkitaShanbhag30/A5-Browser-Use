@@ -1,10 +1,10 @@
 {
   "name": "A5 Browser Automation",
   "version": "0.0.1",
-  "manifest_version": 2,
+  "manifest_version": 3,
   
   "description": "A user-friendly interface for browser automation using the Browser Use library",
-  "browser_action": {
+  "action": {
     "default_popup": "popup.html",
     "default_icon": {
       "16": "icons/icon16.png",
@@ -19,14 +19,12 @@
     "128": "icons/icon128.png"
   },
   "default_locale": "en",
-  "background": {
-    "page": "src/bg/background.html",
-    "persistent": true
-  },
   "permissions": [
-    "https://*/*",
-     "storage",
-     "tabs"
+    "storage",
+    "tabs"
+  ],
+  "host_permissions": [
+    "https://*/*"
   ],
   "content_scripts": [
     {
@@ -41,6 +39,9 @@
     }
   ],
   "web_accessible_resources": [
-       "extra.js"
+    {
+      "resources": ["extra.js"],
+      "matches": ["https://*/*"]
+    }
   ]
 }
