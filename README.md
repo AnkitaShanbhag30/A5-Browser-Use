@@ -1,4 +1,4 @@
-# A5-Browser-Use Chrome Extension and Server for Agentic AI Workflows
+# Jobi-wan Chrome Extension and Server for Agentic AI Workflows
 
 Your commands control the browser - made easy. Supports various large language model providers, including OpenAI, Gemini, and Ollama.
 
@@ -108,15 +108,23 @@ However, if this does not work or alternatively, you can follow these steps to s
 
 ## Table of Contents
 
-- [Features](#features)
-- [Prerequisites](#prerequisites)
-- [Installation](#installation)
-  - [Clone the Repository](#clone-the-repository)
-  - [Set Up the Python Server](#set-up-the-python-server)
-  - [Install the Chrome Extension](#install-the-chrome-extension)
-- [Usage](#usage)
-- [Contributing](#contributing)
-- [License](#license)
+- [Jobi-wan Chrome Extension and Server for Agentic AI Workflows](#jobi-wan-chrome-extension-and-server-for-agentic-ai-workflows)
+    - [Chrome Extension Demo:](#chrome-extension-demo)
+  - [Important (Experimental) Notice](#important-experimental-notice)
+    - [WARNING: Important before proceeding](#warning-important-before-proceeding)
+    - [Quick Start (macOS)](#quick-start-macos)
+    - [Quick Start (Linux and Windows)](#quick-start-linux-and-windows)
+  - [Table of Contents](#table-of-contents)
+  - [Features](#features)
+  - [Prerequisites](#prerequisites)
+  - [Installation](#installation)
+    - [Clone the Repository](#clone-the-repository)
+    - [Set Up the Python Server](#set-up-the-python-server)
+    - [Install the Chrome Extension](#install-the-chrome-extension)
+  - [Usage](#usage)
+  - [Contributing](#contributing)
+  - [License](#license)
+    - [Final Notes](#final-notes)
 
 ---
 

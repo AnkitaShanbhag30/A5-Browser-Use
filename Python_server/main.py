@@ -6,7 +6,7 @@
 #    /Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome --remote-debugging-port=9222
 # 3. Run the FastAPI server:
 #    uvicorn main:app --host 127.0.0.1 --port 8888 --reload --workers 1
-# make sure you set OPENAI_API_KEY=yourOpenAIKeyHere to .env file
+# Make sure you set OPENAI_API_KEY=yourOpenAIKeyHere to .env file
 
 import os
 os.environ["PYDANTIC_V1_COMPAT_MODE"] = "true"
@@ -26,6 +26,9 @@ from typing import List, Optional
 from enum import Enum
 from fastapi.middleware.cors import CORSMiddleware
 
+import requests
+import io
+from PyPDF2 import PdfReader
 
 
 # ----------------------------
@@ -51,7 +54,6 @@ if not api_key:
 # ----------------------------
 app = FastAPI(title="AI Agent API with BrowserUse", version="1.0")
 
-
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
@@ -64,9 +66,9 @@ app.add_middleware(
 # ----------------------------
 # 4. Define Pydantic Models
 # ----------------------------
-
 class TaskRequest(BaseModel):
     task: str
+    url: Optional[str] = None  # Optional URL for doc/Google Drive PDF
 
 class TaskResponse(BaseModel):
     result: str
@@ -94,10 +96,33 @@ task_id_counter: int = 0
 task_lock = asyncio.Lock()  # To manage concurrent access to task_records
 
 # ----------------------------
-# 6. Define Background Task Function
+# 6. Define Utility Functions
 # ----------------------------
+def fetch_document_text(url: str) -> str:
+    """
+    Fetches the document from a given URL (could be PDF or text).
+    Returns the extracted text (or raw text if not PDF).
+    Raises an exception on any error.
+    """
+    response = requests.get(url)
+    response.raise_for_status()
+    content_type = response.headers.get("Content-Type", "").lower()
 
+    # If PDF, parse with PyPDF2
+    if "pdf" in content_type:
+        pdf_file = io.BytesIO(response.content)
+        reader = PdfReader(pdf_file)
+        text = ""
+        for page in reader.pages:
+            text += page.extract_text() or ""
+        return text
+    else:
+        # Treat as text/document of some kind
+        return response.text
 
+# ----------------------------
+# 7. Browser Path Helper
+# ----------------------------
 def get_chrome_path() -> str:
     """
     Returns the most common Chrome executable path based on the operating system.
@@ -127,12 +152,14 @@ def get_chrome_path() -> str:
     
     return chrome_path
 
-
-
-async def execute_task(task_id: int, task: str):
+# ----------------------------
+# 8. Define Background Task Function
+# ----------------------------
+async def execute_task(task_id: int, task: str, url: Optional[str] = None):
     """
     Background task to execute the AI agent.
     Initializes a new browser instance for each task to ensure isolation.
+    Optionally fetches and summarizes an external doc/PDF if 'url' is provided.
     """
     global task_records
     browser = None  # Initialize browser instance for this task
@@ -149,14 +176,34 @@ async def execute_task(task_id: int, task: str):
             )
             task_records.append(task_record)
         
+        # If a URL is provided, fetch and summarize its contents
+        if url:
+            logger.info(f"Task ID {task_id}: Fetching document from URL: {url}")
+            try:
+                doc_text = fetch_document_text(url)
+                # Summarize the doc_text using a secondary LLM call (for brevity, direct call here)
+                logger.info(f"Task ID {task_id}: Summarizing document content.")
+                summary_llm = ChatOpenAI(model="gpt-4o-mini", api_key=api_key)
+                doc_summary = summary_llm.predict(
+                    "Please summarize the following text:\n" + doc_text
+                )
+                # Append the summary to the main task to be used as context
+                task += f"\n\nAdditional document summary:\n{doc_summary}"
+                logger.info(f"Task ID {task_id}: Document content summarized and appended to task.")
+            except Exception as doc_error:
+                # Log any errors related to doc fetching/summarizing but continue the main task
+                logger.error(f"Task ID {task_id}: Error fetching/summarizing doc: {doc_error}")
+                logger.error(traceback.format_exc())
+                # We can optionally append an error note to the task
+                task += f"\n\n[Note: Error reading doc from {url} - {doc_error}]"
+
         # Initialize a new browser instance for this task
         logger.info(f"Task ID {task_id}: Initializing new browser instance.")
         browser = Browser(
             config=BrowserConfig(
-                chrome_instance_path=get_chrome_path(),  # Update if different
+                chrome_instance_path=get_chrome_path(),
                 disable_security=True,
-                headless=False,  # Set to True for headless mode
-                # Removed 'remote_debugging_port' as it caused issues
+                headless=False
             )
         )
         logger.info(f"Task ID {task_id}: Browser initialized successfully.")
@@ -206,7 +253,7 @@ async def execute_task(task_id: int, task: str):
                 logger.error(traceback.format_exc())
 
 # ----------------------------
-# 7. Define POST /run Endpoint
+# 9. Define POST /run Endpoint
 # ----------------------------
 @app.post("/run", response_model=TaskResponse)
 async def run_task_post(request: TaskRequest, background_tasks: BackgroundTasks):
@@ -214,10 +261,15 @@ async def run_task_post(request: TaskRequest, background_tasks: BackgroundTasks)
     POST Endpoint to run the AI agent with a specified task.
     
     - **task**: The task description for the AI agent.
+    - **url** (optional): A link to a doc or Google Drive PDF to be fetched, summarized,
+      and included as additional context.
     """
     global task_id_counter
     task = request.task
+    url = request.url
     logger.info(f"Received task via POST: {task}")
+    if url:
+        logger.info(f"Optional doc URL provided: {url}")
     
     # Increment task ID
     async with task_lock:
@@ -225,13 +277,13 @@ async def run_task_post(request: TaskRequest, background_tasks: BackgroundTasks)
         current_task_id = task_id_counter
     
     # Enqueue the background task
-    background_tasks.add_task(execute_task, current_task_id, task)
+    background_tasks.add_task(execute_task, current_task_id, task, url)
     
     # Respond immediately
     return TaskResponse(result="Task is being processed.")
 
 # ----------------------------
-# 8. Define GET /run Endpoint
+# 10. Define GET /run Endpoint
 # ----------------------------
 @app.get("/run", response_model=TaskResponse)
 async def run_task_get(
@@ -251,14 +303,14 @@ async def run_task_get(
         task_id_counter += 1
         current_task_id = task_id_counter
     
-    # Enqueue the background task
+    # Enqueue the background task (no URL support for GET endpoint per instructions)
     background_tasks.add_task(execute_task, current_task_id, task)
     
     # Respond immediately
     return TaskResponse(result="Task is being processed.")
 
 # ----------------------------
-# 9. Define GET /lastResponses Endpoint
+# 11. Define GET /lastResponses Endpoint
 # ----------------------------
 @app.get("/lastResponses", response_model=List[TaskRecord])
 async def get_last_responses(
@@ -282,17 +334,19 @@ async def get_last_responses(
         return sorted_tasks
 
 # ----------------------------
-# 10. Define Root Endpoint
+# 12. Define Root Endpoint
 # ----------------------------
 @app.get("/")
 def read_root():
     return {
-        "message": "AI Agent API with BrowserUse is running. Use the /run endpoint with a 'task' field in the POST request body or as a query parameter in a GET request to execute tasks."
+        "message": (
+            "AI Agent API with BrowserUse is running. Use the /run endpoint with a 'task' field "
+            "in the POST request body or as a query parameter in a GET request to execute tasks."
+        )
     }
 
-#For executable.
 # ----------------------------
-# 12. Entry Point
+# 13. Entry Point
 # ----------------------------
 if __name__ == "__main__":
     import uvicorn
